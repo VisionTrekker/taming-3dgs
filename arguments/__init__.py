@@ -63,7 +63,7 @@ class ModelParams(ParamGroup):
 
 class PipelineParams(ParamGroup):
     def __init__(self, parser):
-        self.separate_sh = True
+        self.separate_sh = True # 是否将球谐系数的直流分量和交流分量分离
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
@@ -89,7 +89,7 @@ class OptimizationParams(ParamGroup):
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
         self.random_background = False
-        self.optimizer_type = "default"
+        self.optimizer_type = "default" # 优化器的类型，'sparse_adam' 或 'sparse_adam'
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

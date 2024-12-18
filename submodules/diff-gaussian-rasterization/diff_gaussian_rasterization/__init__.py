@@ -85,7 +85,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             raster_settings.campos,
             raster_settings.prefiltered,
             raster_settings.debug,
-            pweights
+            pweights    # 正常渲染时为 0 Tensor；计算高斯得分时为 加权后的 当前视角的 渲染图像与gt的L1 loss和 gt图像的归一化纹理边缘, (H,W)
         )
 
         # Invoke C++/CUDA rasterizer
@@ -182,7 +182,7 @@ class GaussianRasterizationSettings(NamedTuple):
     campos : torch.Tensor
     prefiltered : bool
     debug : bool
-    pixel_weights : torch.Tensor
+    pixel_weights : torch.Tensor    # 正常渲染时为 None；计算高斯得分时为 加权后的 当前视角的 渲染图像与gt的L1 loss和 gt图像的归一化纹理边缘, (H,W)
 
 class GaussianRasterizer(nn.Module):
     def __init__(self, raster_settings):

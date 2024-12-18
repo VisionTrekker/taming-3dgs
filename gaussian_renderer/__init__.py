@@ -20,6 +20,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     Render the scene. 
     
     Background tensor (bg_color) must be on GPU!
+
+        pixel_weights：加权后的 当前视角的 渲染图像与gt的L1 loss和 gt图像的归一化纹理边缘, (H,W)
     """
  
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
@@ -79,7 +81,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
-            if pipe.separate_sh:
+            if pipe.separate_sh:    # 默认，将球谐系数的直流分量和交流分量分离
                 dc, shs = pc.get_features_dc, pc.get_features_rest
             else:
                 shs = pc.get_features
@@ -87,7 +89,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         colors_precomp = override_color
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    if pipe.separate_sh:
+    if pipe.separate_sh:    # 默认
         rendered_image, radii, counts, lists, listsRender, listsDistance, centers, depths, my_radii, accum_weights, accum_count, accum_blend, accum_dist = rasterizer(
             means3D = means3D,
             means2D = means2D,

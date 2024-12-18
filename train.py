@@ -35,7 +35,7 @@ from utils.taming_utils import compute_gaussian_score, get_edges, get_count_arra
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, websockets, score_coefficients, args):
     first_iter = 0
-    densify_iter_num = 0
+    densify_iter_num = 0    #
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
     scene = Scene(dataset, gaussians)
@@ -62,13 +62,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     start_time = torch.cuda.Event(enable_timing=True)
     end_time = torch.cuda.Event(enable_timing=True)
 
-    all_edges = []
-    for view in scene.getTrainCameras():
+    all_edges = []  # 归一化后的 所有训练图像的 纹理边缘图（H,W）
+    for view in scene.getTrainCameras():    # 遍历每个训练图像，获取对应的 纹理边缘图，并归一化到 [0,1]
         edges_loss = get_edges(view.original_image).squeeze().cuda()
         edges_loss_norm = (edges_loss - torch.min(edges_loss)) / (torch.max(edges_loss) - torch.min(edges_loss))
         all_edges.append(edges_loss_norm.cpu())
 
-    counts_array = None
+    counts_array = None     # 每次增稠后高斯的个数
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
@@ -87,6 +87,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_start.record()
 
         if counts_array == None:
+            # 根据最终高斯个数与迭代次数计算 每次增稠后高斯的个数
             counts_array = get_count_array(len(scene.gaussians.get_xyz), args.budget, opt, mode=args.mode)
             print(counts_array)
 
@@ -97,10 +98,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gaussians.oneupSHdegree()
 
         # Pick a random Camera
-        if not viewpoint_stack:
+        if not viewpoint_stack: # 如果相机列表全部取完，则重新拷贝一份，继续随机取
             viewpoint_stack = scene.getTrainCameras().copy()
             viewpoint_indices = list(range(len(viewpoint_stack)))
         rand_idx = randint(0, len(viewpoint_indices) - 1)
+        # 取出一个相机后，从列表中去除它
         viewpoint_cam = viewpoint_stack.pop(rand_idx)
         _ = viewpoint_indices.pop(rand_idx)
 
@@ -122,8 +124,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         if args.benchmark_dir:
             end_time.record()
-            torch.cuda.synchronize()
-            time_taken["forward"] += [start_time.elapsed_time(end_time)]
+            torch.cuda.synchronize()    # 同步GPU，以确保在记录结束时间之前，所有在前向传播过程中进行的GPU操作都已完成
+            time_taken["forward"] += [start_time.elapsed_time(end_time)]    # 累加前向传播时间
 
         if args.benchmark_dir:
             start_time.record()
@@ -131,7 +133,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if args.benchmark_dir:
             end_time.record()
             torch.cuda.synchronize()
-            time_taken["backward"] += [start_time.elapsed_time(end_time)]
+            time_taken["backward"] += [start_time.elapsed_time(end_time)]   # 累加反向传播时间
 
         iter_end.record()
 
@@ -152,27 +154,29 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # Densification
             if iteration < opt.densify_until_iter:
-                # Keep track of max radii in image-space for pruning
+                # Keep track of max radii in image-space for pruning，记录每个高斯投影到图像平面的最大半径，以判定是否剪枝
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    my_viewpoint_stack = scene.getTrainCameras().copy()
-                    edges_stack = all_edges.copy()
+                    my_viewpoint_stack = scene.getTrainCameras().copy() # 所有训练相机
+                    edges_stack = all_edges.copy()  #  所有训练相机的 纹理边缘图（CPU）
 
-                    num_cams = args.cams
+                    num_cams = args.cams    # 计算高斯score 的相机数量。若为-1则为所有训练相机的个数
                     if args.cams == -1:
                         num_cams = len(my_viewpoint_stack)
                     edge_losses = []
                     camlist = []
-                    for _ in range(num_cams):
+                    for _ in range(num_cams):   # 从所有训练相机中 随机选择10个相机 和 对应的 纹理边缘图
                         loc = random.randint(0, len(my_viewpoint_stack) - 1)
                         camlist.append(my_viewpoint_stack.pop(loc))
                         edge_losses.append(edges_stack.pop(loc))
 
+                    # 计算高斯score
                     gaussian_importance = compute_gaussian_score(scene, camlist, edge_losses, gaussians, pipe, bg, score_coefficients, opt)                    
-                    gaussians.densify_with_score(scores = gaussian_importance, 
+                    # 基于高斯score增稠
+                    gaussians.densify_with_score(scores = gaussian_importance,
                                                 max_screen_size = size_threshold, 
                                                 min_opacity = 0.005, 
                                                 extent = scene.cameras_extent, 
@@ -209,7 +213,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if args.benchmark_dir:
                 end_time.record()
                 torch.cuda.synchronize()
-                time_taken["step"] += [start_time.elapsed_time(end_time)]
+                time_taken["step"] += [start_time.elapsed_time(end_time)]   # 累加优化（增稠之后的优化器耗时）时间
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
@@ -224,7 +228,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-        if args.benchmark_dir:
+        if args.benchmark_dir:  # 每次迭代完，记录前传、反传、优化器的耗时
             os.makedirs(args.benchmark_dir, exist_ok = True)
             np.save(os.path.join(args.benchmark_dir, "forward.npy"), np.array(time_taken["forward"]))
             np.save(os.path.join(args.benchmark_dir, "backward.npy"), np.array(time_taken["backward"]))
@@ -314,13 +318,13 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[30_000])
     parser.add_argument("--start_checkpoint", type=str, default = None)
-    parser.add_argument("--cams", type=int, default=10)
-    parser.add_argument("--budget", type=float, default=20)
-    parser.add_argument("--mode", type=str, default="multiplier", choices=["multiplier", "final_count"])
-    parser.add_argument("--websockets", action='store_true', default=False)
-    parser.add_argument("--ho_iteration", type=int, default=15000)
-    parser.add_argument("--sh_lower", action='store_true', default=False)
-    parser.add_argument("--benchmark_dir", type=str, default=None)
+    parser.add_argument("--cams", type=int, default=10)     # 计算高斯score 的相机数量
+    parser.add_argument("--budget", type=float, default=20) # 最终的高斯个数的倍率（mode=multiplier） 或 最终的高斯个数（mode=final_count）
+    parser.add_argument("--mode", type=str, default="multiplier", choices=["multiplier", "final_count"])    # multiplier模式，高斯最终数量 = SfM数量 * budget(float)；final_count模式，高斯最终数量 = budget(int)
+    parser.add_argument("--websockets", action='store_true', default=False) # 是否开启 网页端查看器
+    parser.add_argument("--ho_iteration", type=int, default=15000)  # 启用高不透明度的迭代次数（默认15000，在增稠结束后）
+    parser.add_argument("--sh_lower", action='store_true', default=False)   # 是否开启 以较低的频率（每16代1次）更新SH 来加速
+    parser.add_argument("--benchmark_dir", type=str, default=None)  # 保存计时结果的文件夹（如果为空，则不会进行耗时分析）
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     

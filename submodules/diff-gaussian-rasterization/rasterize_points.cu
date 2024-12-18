@@ -71,7 +71,7 @@ RasterizeGaussiansCUDA(
 	const torch::Tensor& campos,
 	const bool prefiltered,
 	const bool debug,
-	const torch::Tensor& pixel_weights)
+	const torch::Tensor& pixel_weights) // 正常渲染时为 0 Tensor；计算高斯得分时为 加权后的 当前视角的 渲染图像与gt的L1 loss和 gt图像的归一化纹理边缘, (H,W)
 {
   if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
     AT_ERROR("means3D must have dimensions (num_points, 3)");
@@ -121,7 +121,8 @@ RasterizeGaussiansCUDA(
   torch::Tensor reverseCount = torch::empty({0}, int_opts);
   torch::Tensor blendingWeights = torch::empty({0}, float_opts);
   torch::Tensor distAccum = torch::empty({0}, float_opts);
-  if(pixel_weights.size(0) != 0)
+
+  if(pixel_weights.size(0) != 0)    // 正常渲染时为 0 Tensor；计算高斯得分时为 加权后的 当前视角的 渲染图像与gt的L1 loss和 gt图像的归一化纹理边缘, (H,W)
   {
 	countBuffer = torch::full({H, W}, 0, int_opts);
 	offsetBuffer = torch::full({H, W}, 0, int_opts);
